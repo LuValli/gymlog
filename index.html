@@ -10,6 +10,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
 <title>GymLog</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 // Registra il service worker per il funzionamento offline
 if ('serviceWorker' in navigator) {
@@ -72,9 +73,6 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 @keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
 .toast{position:fixed;bottom:calc(var(--nav-h) + var(--sb) + 16px);left:50%;transform:translateX(-50%) translateY(12px);background:var(--black);color:#fff;padding:11px 22px;border-radius:100px;font-size:13px;font-weight:500;z-index:500;opacity:0;transition:all .22s;pointer-events:none;white-space:nowrap;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-.fab{position:fixed;bottom:calc(var(--nav-h) + var(--sb) + 18px);right:20px;width:54px;height:54px;border-radius:50%;background:var(--accent);border:none;color:#fff;font-size:26px;display:flex;align-items:center;justify-content:center;z-index:95;transition:transform .12s;}
-.fab:active{transform:scale(.93);}
-.fab-up{bottom:calc(92vh + var(--nav-h) + var(--sb) + 18px) !important;}
 /* Dashboard */
 .dash-header{padding:28px 24px 0;}
 .dash-top{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:4px;}
@@ -180,9 +178,40 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 .empty-state{padding:60px 24px;text-align:center;}
 .empty-state .en{font-size:72px;font-weight:800;color:rgba(17,17,17,.12);letter-spacing:-.05em;line-height:1;}
 .empty-state .et{font-size:15px;color:var(--text2);margin-top:10px;line-height:1.5;}
+/* Auth */
+#auth-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:24px;background:var(--bg);}
+.auth-box{width:100%;max-width:360px;}
+.auth-logo{font-size:64px;font-weight:800;letter-spacing:-.04em;text-align:center;margin-bottom:4px;color:var(--text);}
+.auth-sub{text-align:center;font-size:13px;color:var(--text2);margin-bottom:36px;}
+.auth-toggle{text-align:center;margin-top:20px;font-size:13px;color:var(--text2);}
+.auth-toggle a{color:var(--accent);font-weight:600;text-decoration:none;}
+.auth-err{background:rgba(211,47,47,0.08);color:var(--danger);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:none;}
+.auth-spinner{display:inline-block;width:18px;height:18px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+/* Logout btn */
+.logout-btn{border:none;background:none;color:var(--text3);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:4px 8px;cursor:pointer;}
+.logout-btn:active{color:var(--danger);}
+/* App container hidden by default until auth */
+#app-container{display:none;}
 </style>
 </head>
 <body>
+
+<!-- AUTH SCREEN -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">GymLog</div>
+    <div class="auth-sub">Traccia i tuoi allenamenti</div>
+    <div class="auth-err" id="auth-err"></div>
+    <div class="input-group"><label class="input-label">Email</label><input class="input" id="auth-email" type="email" placeholder="la@tua.email" autocomplete="email"></div>
+    <div class="input-group"><label class="input-label">Password</label><input class="input" id="auth-pass" type="password" placeholder="Min. 6 caratteri" autocomplete="current-password"></div>
+    <button class="btn btn-accent btn-full" id="auth-btn" onclick="authSubmit()" style="margin-top:4px;">Accedi</button>
+    <div class="auth-toggle" id="auth-toggle">Non hai un account? <a href="#" onclick="toggleAuthMode(event)">Registrati</a></div>
+  </div>
+</div>
+
+<!-- APP CONTAINER (hidden until logged in) -->
+<div id="app-container">
 
 <!-- PAGES -->
 <div id="page-dashboard" class="page active">
@@ -214,8 +243,13 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 <div id="page-schede" class="page">
   <div class="page-inner">
     <div style="padding:28px 24px 16px;border-bottom:1px solid var(--line);">
-      <div style="font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;">Schede</div>
-      <div class="label-xs" style="margin-top:6px;">Le tue routine</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;">Schede</div>
+          <div class="label-xs" style="margin-top:6px;">Le tue routine</div>
+        </div>
+        <button class="btn btn-accent" onclick="openNewRoutine()" style="padding:10px 18px;font-size:13px;">+ Nuova</button>
+      </div>
     </div>
     <div id="schede-list" style="padding:16px 0;"></div>
   </div>
@@ -224,8 +258,13 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 <div id="page-esercizi" class="page">
   <div class="page-inner">
     <div style="padding:28px 24px 0;">
-      <div style="font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;">Esercizi</div>
-      <div class="label-xs" style="margin-top:6px;">Libreria completa</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;">Esercizi</div>
+          <div class="label-xs" style="margin-top:6px;">Libreria completa</div>
+        </div>
+        <button class="btn btn-accent" onclick="openNewEx(false)" style="padding:10px 18px;font-size:13px;">+ Nuovo</button>
+      </div>
     </div>
     <div style="padding:12px 24px 0;position:relative;">
       <input class="input" id="ex-search" placeholder="Cerca esercizio&#8230;" oninput="renderLib()" style="padding-left:16px;border-radius:100px;">
@@ -238,8 +277,13 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
 <div id="page-stats" class="page">
   <div class="page-inner">
     <div style="padding:28px 24px 0;">
-      <div style="font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;">Stats</div>
-      <div class="label-xs" style="margin-top:6px;">I tuoi progressi</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:40px;font-weight:800;letter-spacing:-.03em;line-height:1;">Stats</div>
+          <div class="label-xs" style="margin-top:6px;">I tuoi progressi</div>
+        </div>
+        <button class="logout-btn" onclick="doLogout()">Esci ↗</button>
+      </div>
     </div>
     <div class="stats-period">
       <button class="period-btn active" onclick="setPeriod('G',this)">Giorno</button>
@@ -259,7 +303,6 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
   <button class="nav-item" onclick="goPage('stats')" id="nav-stats"><span class="nav-dot"></span>Stats</button>
 </nav>
 
-<button class="fab" id="fab" onclick="fabAct()">+</button>
 <div class="toast" id="toast"></div>
 
 <!-- WORKOUT DRAWER -->
@@ -373,17 +416,103 @@ select.input{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w
   </div>
 </div>
 
+</div><!-- /app-container -->
+
 <script>
-// ═══ DATA ═══
 // ═══════════════════════════════════════════════════════════════
-//  STORAGE LAYER
-//  Oggi: localStorage. Domani: cambia solo questo blocco con
-//  Supabase/Firebase e tutto il resto dell'app resta invariato.
+//  SUPABASE CONFIG
+//  ⚠️  SOSTITUISCI con i tuoi valori da supabase.com → Settings → API
+// ═══════════════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://kqaztazcbukbqayrtegx.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxYXp0YXpjYnVrYnFheXJ0ZWd4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2MzEwMjYsImV4cCI6MjA5NDIwNzAyNn0.EjvqHtE4AHNaORKGHehKnWOCpvdcLVqRhHGtX5FfMBg';
+
+const supaClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+let currentUser = null;
+
+// ═══ AUTH ═══
+let authMode = 'login'; // 'login' | 'register'
+
+function toggleAuthMode(e) {
+  e.preventDefault();
+  authMode = authMode === 'login' ? 'register' : 'login';
+  document.getElementById('auth-btn').textContent = authMode === 'login' ? 'Accedi' : 'Registrati';
+  document.getElementById('auth-toggle').innerHTML = authMode === 'login'
+    ? 'Non hai un account? <a href="#" onclick="toggleAuthMode(event)">Registrati</a>'
+    : 'Hai già un account? <a href="#" onclick="toggleAuthMode(event)">Accedi</a>';
+  document.getElementById('auth-err').style.display = 'none';
+}
+
+function showAuthErr(msg) {
+  const el = document.getElementById('auth-err');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function authSubmit() {
+  const email = document.getElementById('auth-email').value.trim();
+  const pass = document.getElementById('auth-pass').value;
+  if (!email || !pass) { showAuthErr('Inserisci email e password'); return; }
+  if (pass.length < 6) { showAuthErr('La password deve avere almeno 6 caratteri'); return; }
+
+  const btn = document.getElementById('auth-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="auth-spinner"></span>' + (authMode === 'login' ? 'Accesso…' : 'Registrazione…');
+  document.getElementById('auth-err').style.display = 'none';
+
+  try {
+    let result;
+    if (authMode === 'login') {
+      result = await supaClient.auth.signInWithPassword({ email, password: pass });
+    } else {
+      result = await supaClient.auth.signUp({ email, password: pass });
+    }
+
+    if (result.error) {
+      const msg = result.error.message;
+      if (msg.includes('Invalid login')) showAuthErr('Email o password non validi');
+      else if (msg.includes('already registered')) showAuthErr('Email già registrata. Accedi.');
+      else showAuthErr(msg);
+    } else if (result.data?.user) {
+      if (authMode === 'register' && !result.data.session) {
+        showAuthErr('Controlla la tua email per confermare la registrazione!');
+        document.getElementById('auth-err').style.background = 'rgba(46,125,50,0.08)';
+        document.getElementById('auth-err').style.color = 'var(--success)';
+      } else {
+        currentUser = result.data.user;
+        await enterApp();
+      }
+    }
+  } catch (e) {
+    showAuthErr('Errore di connessione. Riprova.');
+    console.warn('auth error', e);
+  }
+  btn.disabled = false;
+  btn.textContent = authMode === 'login' ? 'Accedi' : 'Registrati';
+}
+
+async function doLogout() {
+  await supaClient.auth.signOut();
+  currentUser = null;
+  document.getElementById('app-container').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+async function enterApp() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-container').style.display = 'block';
+  await db.load();
+  renderDash();
+  renderLib();
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STORAGE LAYER — Supabase (cloud) + localStorage (cache/offline)
+//  Un'unica riga "user_data" per utente contiene tutto lo stato.
+//  Questo è il pattern più semplice e robusto per una PWA.
 // ═══════════════════════════════════════════════════════════════
 
 const SK = 'gymlog_v4';
 
-// Esercizi base — sempre disponibili, non modificabili dall'utente
 const BASE_EXERCISES = [
   {id:'e1', name:'Panca piana',         muscle:'Petto',     type:'Bilanciere'},
   {id:'e2', name:'Panca inclinata',     muscle:'Petto',     type:'Bilanciere'},
@@ -412,7 +541,6 @@ const BASE_EXERCISES = [
   {id:'e25',name:'Corsa',               muscle:'Cardio',    type:'Altro'},
 ];
 
-// Stato in memoria dell'app
 let S = {
   exercises: [...BASE_EXERCISES],
   routines:  [],
@@ -420,44 +548,62 @@ let S = {
   nid: 100
 };
 
-// ─── db: unico punto di contatto con lo storage ──────────────────
-// Per migrare a Supabase in futuro: riscrivi solo questo oggetto.
-//
-// Pattern futuro con Supabase:
-//   const { data } = await supabase.from('routines').select('*')
-//   await supabase.from('routines').upsert(routine)
-//
 const db = {
-
-  // Salva l'intero stato (routines + sessions + esercizi custom + nid)
+  // Salva su Supabase + localStorage come cache
   save() {
-    try {
-      const payload = {
-        routines:  S.routines,
-        sessions:  S.sessions,
-        // Salva solo gli esercizi aggiunti dall'utente (non quelli base)
-        customExercises: S.exercises.filter(e => e.id.startsWith('i_')),
-        nid: S.nid
-      };
-      localStorage.setItem(SK, JSON.stringify(payload));
-    } catch(e) { console.warn('db.save error', e); }
+    const payload = {
+      routines:  S.routines,
+      sessions:  S.sessions,
+      customExercises: S.exercises.filter(e => e.id.startsWith('i_')),
+      nid: S.nid
+    };
+    // Cache locale immediata
+    try { localStorage.setItem(SK, JSON.stringify(payload)); } catch(e) {}
+    // Sync su Supabase (fire-and-forget, non blocca l'UI)
+    if (currentUser) {
+      supaClient.from('user_data').upsert({
+        user_id: currentUser.id,
+        data: payload,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id' }).then(({ error }) => {
+        if (error) console.warn('db.save cloud error', error);
+      });
+    }
   },
 
-  // Carica i dati salvati e li fonde con gli esercizi base
-  load() {
-    try {
-      const raw = localStorage.getItem(SK);
-      if (!raw) return; // prima apertura: S rimane quello di default
-      const saved = JSON.parse(raw);
-      // Esercizi = base sempre aggiornati + custom dell'utente
+  // Carica da Supabase, fallback a localStorage se offline
+  async load() {
+    let saved = null;
+    // 1. Prova da Supabase
+    if (currentUser) {
+      try {
+        const { data, error } = await supaClient.from('user_data')
+          .select('data')
+          .eq('user_id', currentUser.id)
+          .maybeSingle();
+        if (!error && data?.data) {
+          saved = data.data;
+          // Aggiorna cache locale
+          try { localStorage.setItem(SK, JSON.stringify(saved)); } catch(e) {}
+        }
+      } catch(e) { console.warn('db.load cloud error, trying localStorage', e); }
+    }
+    // 2. Fallback a localStorage
+    if (!saved) {
+      try {
+        const raw = localStorage.getItem(SK);
+        if (raw) saved = JSON.parse(raw);
+      } catch(e) {}
+    }
+    // 3. Applica allo stato
+    if (saved) {
       S.exercises = [...BASE_EXERCISES, ...(saved.customExercises || [])];
       S.routines  = saved.routines  || [];
       S.sessions  = saved.sessions  || [];
       S.nid       = saved.nid       || 100;
-    } catch(e) { console.warn('db.load error', e); }
+    }
   },
 
-  // Metodi granulari — utili quando si migrerà a un backend vero
   saveRoutines()  { db.save(); },
   saveSessions()  { db.save(); },
   saveExercises() { db.save(); },
@@ -488,11 +634,6 @@ function goPage(p){
   if(p==='schede')renderSchede();
   if(p==='esercizi')renderLib();
   if(p==='stats')renderStats();
-}
-function fabAct(){
-  if(curPage==='schede')openNewRoutine();
-  else if(curPage==='esercizi')openNewEx(false);
-  else openPick();
 }
 
 // ═══ DASHBOARD ═══
@@ -560,7 +701,7 @@ function getLastSets(exId){const last=[...S.sessions].sort((a,b)=>b.date.localeC
 // ═══ SCHEDE ═══
 function renderSchede(){
   const el=document.getElementById('schede-list');
-  if(!S.routines.length){el.innerHTML='<div class="empty-state"><div class="en">0</div><div class="et">Nessuna scheda.<br>Crea la prima con il +</div></div>';return;}
+  if(!S.routines.length){el.innerHTML='<div class="empty-state"><div class="en">0</div><div class="et">Nessuna scheda.<br>Creane una dal pulsante in alto.</div></div>';return;}
   el.innerHTML=S.routines.map(r=>{const names=r.exercises.slice(0,3).map(e=>getEx(e.id)?.name||'').filter(Boolean).join(' · ');const sched=r.schedule?.days?.length?r.schedule.days.join(', '):'Non pianificata';return`<div class="routine-card"><div class="routine-card-head"><div class="routine-card-title">${r.name}</div><div class="routine-card-meta">${r.exercises.length} esercizi · ${sched}</div></div><div style="padding:8px 18px 4px;font-size:12px;color:var(--text2);">${names}${r.exercises.length>3?'…':''}</div><div class="routine-card-actions"><button class="btn btn-sm btn-accent" onclick="startRoutine('${r.id}');goPage('dashboard')">&#9654; Inizia</button><button class="btn btn-sm" onclick="editRoutine('${r.id}')">✎ Modifica</button><button class="btn btn-sm" onclick="planRoutine('${r.id}')">&#128197; Pianifica</button><button class="btn btn-sm btn-danger" onclick="delRoutine('${r.id}')">✕</button></div></div>`;}).join('');
 }
 let editRId=null,tempRExs=[];
@@ -643,7 +784,6 @@ function launchWD(routine,existSess=null){
   renderWD();
   const wd=document.getElementById('wd');wd.classList.add('open');wd.style.height='92vh';wdExp=true;
   document.getElementById('wd-scroll').style.display='block';
-  document.getElementById('fab').classList.add('fab-up');
 }
 function fmtT(s){const m=Math.floor(s/60),sc=s%60;return`${String(m).padStart(2,'0')}:${String(sc).padStart(2,'0')}`;}
 function togWD(){wdExp=!wdExp;const wd=document.getElementById('wd');if(wdExp){wd.style.height='92vh';document.getElementById('wd-scroll').style.display='block';}else{wd.style.height='72px';document.getElementById('wd-scroll').style.display='none';}}
@@ -656,7 +796,7 @@ function addSetWD(wi){if(!wdData)return;const s=wdData.exercises[wi].sets;const 
 function wdAddEx(type){aeTarget=type==='workout'?'workout':'workout';openAddEx('workout');}
 function wdAddExId(id){if(!wdData)return;const last=getLastSets(id);wdData.exercises.push({exId:id,rest:90,sets:last.length?last.map(s=>({...s,done:false})):[{reps:10,weight:'',partial:'',done:false}]});renderWD();}
 function resumeWD(sessId){const s=S.sessions.find(x=>x.id===sessId);if(!s)return;const fake={id:s.routineId,name:s.name,exercises:s.exercises.map(e=>({id:e.exId,exId:e.exId,sets:e.sets.length,reps:e.sets[0]?.reps||10,rest:90}))};wdSessId=sessId;launchWD(fake,s);}
-function endWD(){if(!wdData)return;clearInterval(wdTimer);const sess={id:wdSessId||uid(),date:selDate||today(),name:wdData.name,routineId:wdData.routineId,exercises:wdData.exercises.map(we=>({exId:we.exId,sets:we.sets.map(s=>({reps:s.reps||0,weight:s.weight||0,partial:s.partial||0}))})). filter(e=>e.sets.some(s=>s.reps>0))};if(wdSessId){const i=S.sessions.findIndex(s=>s.id===wdSessId);if(i>=0)S.sessions[i]=sess;else S.sessions.push(sess);}else S.sessions.push(sess);db.save();const wd=document.getElementById('wd');wd.classList.remove('open');wd.style.height='';document.getElementById('fab').classList.remove('fab-up');wdData=null;wdSecs=0;wdSessId=null;renderDash();toast('Allenamento salvato! \u{1F4AA}');}
+function endWD(){if(!wdData)return;clearInterval(wdTimer);const sess={id:wdSessId||uid(),date:selDate||today(),name:wdData.name,routineId:wdData.routineId,exercises:wdData.exercises.map(we=>({exId:we.exId,sets:we.sets.map(s=>({reps:s.reps||0,weight:s.weight||0,partial:s.partial||0}))})). filter(e=>e.sets.some(s=>s.reps>0))};if(wdSessId){const i=S.sessions.findIndex(s=>s.id===wdSessId);if(i>=0)S.sessions[i]=sess;else S.sessions.push(sess);}else S.sessions.push(sess);db.save();const wd=document.getElementById('wd');wd.classList.remove('open');wd.style.height='';wdData=null;wdSecs=0;wdSessId=null;renderDash();toast('Allenamento salvato! \u{1F4AA}');}
 
 function delSession(id){if(!confirm('Eliminare questo allenamento?'))return;S.sessions=S.sessions.filter(s=>s.id!==id);db.save();renderDash();toast('Allenamento eliminato');}
 
@@ -686,10 +826,26 @@ function renderStats(){
 // ═══ INIT ═══
 // Sheet overlay listeners
 document.querySelectorAll('.sheet-overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
-// Init
-db.load();
-renderDash();
-renderLib();
+
+// Enter via auth-key su input
+document.getElementById('auth-pass').addEventListener('keydown', e => { if (e.key === 'Enter') authSubmit(); });
+document.getElementById('auth-email').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('auth-pass').focus(); });
+
+// Check sessione esistente all'avvio
+(async () => {
+  const { data: { session } } = await supaClient.auth.getSession();
+  if (session?.user) {
+    currentUser = session.user;
+    await enterApp();
+  }
+  // Ascolta cambiamenti auth (es. conferma email)
+  supaClient.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+      currentUser = session.user;
+      await enterApp();
+    }
+  });
+})();
 </script>
 </body>
 </html>
